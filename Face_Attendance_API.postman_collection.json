@@ -1,0 +1,109 @@
+{
+  "info": {
+    "name": "Face Attendance Flask API",
+    "_postman_id": "a7b03b58-1234-4567-89ab-faceattendance001",
+    "description": "Test all endpoints for the Face Attendance Flask API (Register, Verify, Attendance History, Reload, Health).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Register User",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"101\",\n  \"username\": \"Aviral\",\n  \"image\": \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...\"\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:5000/api/register",
+          "protocol": "http",
+          "host": ["127.0.0.1"],
+          "port": "5000",
+          "path": ["api", "register"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Verify & Mark Attendance",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"image\": \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...\"\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:5000/api/verify",
+          "protocol": "http",
+          "host": ["127.0.0.1"],
+          "port": "5000",
+          "path": ["api", "verify"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Attendance History (All)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://127.0.0.1:5000/api/attendance/history",
+          "protocol": "http",
+          "host": ["127.0.0.1"],
+          "port": "5000",
+          "path": ["api", "attendance", "history"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Attendance History (By User)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://127.0.0.1:5000/api/attendance/history?user_id=101",
+          "protocol": "http",
+          "host": ["127.0.0.1"],
+          "port": "5000",
+          "path": ["api", "attendance", "history"],
+          "query": [{ "key": "user_id", "value": "101" }]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Reload Faces",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "http://127.0.0.1:5000/api/reload_faces",
+          "protocol": "http",
+          "host": ["127.0.0.1"],
+          "port": "5000",
+          "path": ["api", "reload_faces"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "System Health Check",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://127.0.0.1:5000/api/health",
+          "protocol": "http",
+          "host": ["127.0.0.1"],
+          "port": "5000",
+          "path": ["api", "health"]
+        }
+      },
+      "response": []
+    }
+  ]
+}
