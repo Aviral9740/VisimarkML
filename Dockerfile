@@ -2,9 +2,7 @@
 # Face Attendance Flask API - DeepFace + TensorFlow + MongoDB
 # Optimized for Render / Python 3.9
 # ===========================================================
-
-FROM python:3.9-slim
-
+FROM python:3.9-bookworm
 # ---------- System Setup ----------
 WORKDIR /app
 
