@@ -9,7 +9,8 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install required system packages for OpenCV, TensorFlow, DeepFace
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     libopenblas-dev \
@@ -20,8 +21,9 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     libglib2.0-0 \
     libgl1-mesa-glx \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # ---------- Python Dependencies ----------
 COPY requirements.txt .
