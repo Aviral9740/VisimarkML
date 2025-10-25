@@ -34,7 +34,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ✅ FIX: Install TensorFlow 2.13 (last stable version with built-in Keras)
-# OR install separate Keras 2.x package
 RUN pip install --no-cache-dir tensorflow==2.13.1 keras==2.13.1 h5py==3.10.0
 
 # Optional: Preload DeepFace model for faster container startup
@@ -46,17 +45,16 @@ COPY . .
 # Create directory for storing face images
 RUN mkdir -p Attendancedir
 
-# Environment variables
+# Environment variables - REMOVED hardcoded PORT
 ENV PYTHONUNBUFFERED=1 \
-    TF_CPP_MIN_LOG_LEVEL=2 \
-    PORT=5000
+    TF_CPP_MIN_LOG_LEVEL=2
 
-# Expose the Flask app port
-EXPOSE 5000
+# Expose port (Render uses 10000 by default)
+EXPOSE 10000
 
-# Health check (optional but good practice)
+# Health check - Updated to use $PORT variable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-  CMD curl -f http://localhost:5000/api/health || exit 1
+  CMD curl -f http://localhost:${PORT:-10000}/api/health || exit 1
 
-# ✅ Run app using Gunicorn (production-ready)
-CMD gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2 --threads 2 --worker-class gthread --preload
+# ✅ Run app using Gunicorn - PORT comes from environment
+CMD gunicorn app:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --threads 2 --worker-class gthread --preload
