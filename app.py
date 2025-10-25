@@ -1,5 +1,5 @@
 # ===============================
-# app.py — Face Attendance API (MongoDB version)
+# app.py — Face Attendance API (MongoDB + DeepFace - NO DLIB!)
 # ===============================
 
 import os
@@ -14,7 +14,7 @@ from flask_cors import CORS
 import cv2
 import numpy as np
 from PIL import Image
-import face_recognition
+from deepface import DeepFace
 from pymongo import MongoClient
 
 # ===============================
@@ -28,7 +28,18 @@ os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
 LIVENESS_REQUIRED = True
 MIN_CONFIDENCE = 0.6
-TOLERANCE = 0.5
+TOLERANCE = 0.4  # Distance threshold for DeepFace (lower = stricter)
+
+# DeepFace model selection
+# Options: VGG-Face, Facenet, Facenet512, OpenFace, DeepFace, DeepID, ArcFace, Dlib
+# Recommendation: Facenet512 (best balance of speed and accuracy)
+FACE_MODEL = "Facenet512"
+
+# Detector backend for face detection
+# Options: opencv, ssd, dlib, mtcnn, retinaface
+# Recommendation: opencv (fastest) or retinaface (most accurate)
+DETECTOR_BACKEND = "opencv"
+
 
 # ===============================
 # Utility Functions
@@ -52,6 +63,25 @@ def filename_for(user_id, username):
     filename = f"{str(user_id).strip()}_{str(username).strip()}.jpg"
     return os.path.join(IMAGE_FOLDER, filename)
 
+
+def cosine_distance(embedding1, embedding2):
+    """Calculate cosine distance between two embeddings."""
+    embedding1 = np.array(embedding1)
+    embedding2 = np.array(embedding2)
+
+    # Normalize
+    embedding1 = embedding1 / (np.linalg.norm(embedding1) + 1e-6)
+    embedding2 = embedding2 / (np.linalg.norm(embedding2) + 1e-6)
+
+    # Cosine similarity
+    similarity = np.dot(embedding1, embedding2)
+
+    # Convert to distance (0 = identical, 2 = opposite)
+    distance = 1 - similarity
+
+    return distance
+
+
 # ===============================
 # MongoDB Setup
 # ===============================
@@ -59,6 +89,7 @@ mongo_client = MongoClient(MONGO_URI)
 db = mongo_client[DB_NAME]
 users_col = db["users"]
 attendance_col = db["attendance"]
+
 
 # ===============================
 # Liveness Detection
@@ -151,70 +182,138 @@ class LivenessDetector:
         except Exception as e:
             return False, {"error": str(e)}
 
+
 # ===============================
-# Face Service (Encodings + Verification)
+# Face Service (DeepFace - Encodings + Verification)
 # ===============================
 class FaceService:
     def __init__(self, liveness):
         self.liveness = liveness
-        self.known_encodings = []
+        self.known_embeddings = []
         self.known_names = []
         self.load_known_faces()
 
     def load_known_faces(self):
-        self.known_encodings = []
+        """Load all registered faces and generate embeddings using DeepFace."""
+        print(f"Loading face database using {FACE_MODEL}...")
+        self.known_embeddings = []
         self.known_names = []
+
         for user in users_col.find():
             image_path = user.get("image_path")
             name = f"{user['_id']}_{user['username']}"
+
             if not image_path or not os.path.exists(image_path):
+                print(f"  ⚠ Skipping {name}: Image not found")
                 continue
-            img = cv2.imread(image_path)
-            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            enc = face_recognition.face_encodings(rgb)
-            if enc:
-                self.known_encodings.append(enc[0])
-                self.known_names.append(name)
+
+            try:
+                # Generate embedding using DeepFace
+                embedding_objs = DeepFace.represent(
+                    img_path=image_path,
+                    model_name=FACE_MODEL,
+                    detector_backend=DETECTOR_BACKEND,
+                    enforce_detection=False  # Don't fail if face not detected
+                )
+
+                if embedding_objs and len(embedding_objs) > 0:
+                    embedding = embedding_objs[0]["embedding"]
+                    self.known_embeddings.append(embedding)
+                    self.known_names.append(name)
+                    print(f"  ✓ Loaded: {name}")
+                else:
+                    print(f"  ✗ No face detected in: {name}")
+
+            except Exception as e:
+                print(f"  ✗ Error loading {name}: {e}")
+
+        print(f"✓ Loaded {len(self.known_names)} faces\n")
         return len(self.known_names)
 
     def verify(self, bgr_frame):
-        small = cv2.resize(bgr_frame, (0, 0), None, 0.25, 0.25)
-        rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-        locations = face_recognition.face_locations(rgb)
-        encodings = face_recognition.face_encodings(rgb, locations)
+        """Verify faces in frame using DeepFace."""
         results = []
 
-        for enc, loc in zip(encodings, locations):
-            y1, x2, y2, x1 = [v * 4 for v in loc]
+        try:
+            # Detect faces and get embeddings from frame
+            embedding_objs = DeepFace.represent(
+                img_path=bgr_frame,
+                model_name=FACE_MODEL,
+                detector_backend=DETECTOR_BACKEND,
+                enforce_detection=False
+            )
 
-            if LIVENESS_REQUIRED:
-                live, checks = self.liveness.is_live(bgr_frame, (x1, y1, x2, y2))
-                if not live:
-                    results.append({"matched": False, "reason": "spoofing", "liveness": checks})
+            if not embedding_objs:
+                return [{"matched": False, "reason": "no_face_detected"}]
+
+            for obj in embedding_objs:
+                frame_embedding = obj["embedding"]
+                facial_area = obj["facial_area"]
+
+                # Extract face coordinates
+                x = facial_area["x"]
+                y = facial_area["y"]
+                w = facial_area["w"]
+                h = facial_area["h"]
+                x1, y1, x2, y2 = x, y, x + w, y + h
+
+                # Liveness check
+                if LIVENESS_REQUIRED:
+                    live, checks = self.liveness.is_live(bgr_frame, (x1, y1, x2, y2))
+                    if not live:
+                        results.append({
+                            "matched": False,
+                            "reason": "spoofing",
+                            "liveness": checks
+                        })
+                        continue
+
+                # Check if we have registered users
+                if not self.known_embeddings:
+                    results.append({"matched": False, "reason": "no_users"})
                     continue
 
-            if not self.known_encodings:
-                results.append({"matched": False, "reason": "no_users"})
-                continue
+                # Compare with all registered faces
+                best_match_idx = -1
+                best_distance = float('inf')
 
-            matches = face_recognition.compare_faces(self.known_encodings, enc, tolerance=TOLERANCE)
-            dists = face_recognition.face_distance(self.known_encodings, enc)
-            best_idx = int(np.argmin(dists)) if len(dists) else -1
+                for idx, known_embedding in enumerate(self.known_embeddings):
+                    distance = cosine_distance(frame_embedding, known_embedding)
 
-            if best_idx >= 0 and matches[best_idx] and dists[best_idx] < TOLERANCE:
-                confidence = float(1.0 - dists[best_idx])
-                name = self.known_names[best_idx]
-                user_id, username = name.split("_", 1)
-                results.append({
-                    "matched": True,
-                    "userId": user_id,
-                    "username": username,
-                    "confidence": confidence
-                })
-            else:
-                results.append({"matched": False, "reason": "unknown"})
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_match_idx = idx
+
+                # Check if match is good enough
+                if best_match_idx >= 0 and best_distance < TOLERANCE:
+                    confidence = float(1.0 - best_distance)
+                    name = self.known_names[best_match_idx]
+                    user_id, username = name.split("_", 1)
+
+                    results.append({
+                        "matched": True,
+                        "userId": user_id,
+                        "username": username,
+                        "confidence": confidence,
+                        "distance": best_distance
+                    })
+                else:
+                    results.append({
+                        "matched": False,
+                        "reason": "unknown",
+                        "best_distance": best_distance
+                    })
+
+        except Exception as e:
+            print(f"Verification error: {e}")
+            results.append({
+                "matched": False,
+                "reason": "error",
+                "message": str(e)
+            })
 
         return results
+
 
 # ===============================
 # Flask App
@@ -225,42 +324,84 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 liveness = LivenessDetector()
 face_service = FaceService(liveness)
 
+
 # ===============================
 # Routes
 # ===============================
 
 @app.route("/api/register", methods=["POST"])
 def register_user():
+    """Register a new user with face image."""
     try:
         data = request.get_json(force=True)
         user_id = str(data["user_id"])
         username = data["username"]
         image_b64 = data["image"]
 
+        # Save image
         image_path = filename_for(user_id, username)
         bgr = decode_base64_image_to_bgr(image_b64)
         cv2.imwrite(image_path, bgr)
 
+        # Verify face can be detected and encoded
+        try:
+            embedding_objs = DeepFace.represent(
+                img_path=image_path,
+                model_name=FACE_MODEL,
+                detector_backend=DETECTOR_BACKEND,
+                enforce_detection=True  # Ensure face is detected
+            )
+
+            if not embedding_objs:
+                os.remove(image_path)  # Clean up
+                return jsonify({
+                    "success": False,
+                    "message": "No face detected in image"
+                }), 400
+
+        except Exception as e:
+            if os.path.exists(image_path):
+                os.remove(image_path)  # Clean up
+            return jsonify({
+                "success": False,
+                "message": f"Face detection failed: {str(e)}"
+            }), 400
+
+        # Save to MongoDB
         users_col.update_one(
             {"_id": user_id},
-            {"$set": {"username": username, "image_path": image_path, "registeredAt": datetime.utcnow()}},
+            {"$set": {
+                "username": username,
+                "image_path": image_path,
+                "registeredAt": datetime.utcnow()
+            }},
             upsert=True
         )
 
+        # Reload face database
         count = face_service.load_known_faces()
-        return jsonify({"success": True, "message": "User registered", "faces_loaded": count})
+
+        return jsonify({
+            "success": True,
+            "message": "User registered successfully",
+            "faces_loaded": count
+        })
+
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/verify", methods=["POST"])
 def verify_attendance():
+    """Verify face and mark attendance."""
     try:
         data = request.get_json(force=True)
         image_b64 = data["image"]
         frame = decode_base64_image_to_bgr(image_b64)
 
+        # Verify faces in frame
         results = face_service.verify(frame)
+
         any_match = False
         for r in results:
             if r.get("matched"):
@@ -268,70 +409,169 @@ def verify_attendance():
                 uid = r["userId"]
                 uname = r["username"]
                 conf = r["confidence"]
+
+                # Check if already marked today
                 date_str = datetime.now().strftime("%Y-%m-%d")
                 existing = attendance_col.find_one({"userId": uid, "date": date_str})
+
                 if not existing:
+                    # Mark attendance
                     attendance_col.insert_one({
                         "userId": uid,
                         "username": uname,
                         "date": date_str,
                         "time": datetime.now().strftime("%H:%M:%S"),
-                        "confidence": conf
+                        "confidence": conf,
+                        "timestamp": datetime.utcnow()
                     })
                     r["attendance_marked"] = True
+                    r["message"] = "Attendance marked successfully"
                 else:
                     r["attendance_marked"] = False
                     r["message"] = "Already marked today"
 
         return jsonify({"success": any_match, "recognized": results})
+
     except Exception as e:
+        print(f"Verify error: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/attendance/history", methods=["GET"])
 def get_history():
+    """Get attendance history with optional filters."""
     try:
         user_id = request.args.get("user_id")
+        date = request.args.get("date")
+
         query = {}
         if user_id:
             query["userId"] = user_id
-        records = list(attendance_col.find(query, {"_id": 0}))
-        return jsonify({"success": True, "records": records})
+        if date:
+            query["date"] = date
+
+        records = list(attendance_col.find(query, {"_id": 0}).sort("timestamp", -1))
+
+        return jsonify({
+            "success": True,
+            "records": records,
+            "count": len(records)
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/users", methods=["GET"])
+def get_users():
+    """Get all registered users."""
+    try:
+        users = list(users_col.find({}, {"_id": 1, "username": 1, "registeredAt": 1}))
+
+        # Convert ObjectId to string for JSON serialization
+        for user in users:
+            user["userId"] = str(user.pop("_id"))
+
+        return jsonify({
+            "success": True,
+            "users": users,
+            "count": len(users)
+        })
+
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/health", methods=["GET"])
 def health():
+    """Health check endpoint with system statistics."""
     try:
         total_users = users_col.count_documents({})
         total_attendance = attendance_col.count_documents({})
         today = datetime.now().strftime("%Y-%m-%d")
         today_present = attendance_col.count_documents({"date": today})
+
         return jsonify({
             "ok": True,
+            "model": FACE_MODEL,
+            "detector": DETECTOR_BACKEND,
+            "liveness_enabled": LIVENESS_REQUIRED,
             "stats": {
                 "Total Users": total_users,
                 "Total Attendance Records": total_attendance,
-                "Today Present": today_present
+                "Today Present": today_present,
+                "Loaded Faces": len(face_service.known_embeddings)
             }
         })
+
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)}), 500
 
 
 @app.route("/api/reload_faces", methods=["POST"])
 def reload_faces():
+    """Reload all face embeddings from database."""
     try:
         count = face_service.load_known_faces()
         liveness.frame_buffer.clear()
-        return jsonify({"success": True, "message": f"Faces reloaded: {count}"})
+        liveness.blink_counter = 0
+
+        return jsonify({
+            "success": True,
+            "message": f"Faces reloaded successfully",
+            "count": count
+        })
+
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/delete_user/<user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    """Delete a user and their data."""
+    try:
+        # Get user to find image path
+        user = users_col.find_one({"_id": user_id})
+
+        if not user:
+            return jsonify({"success": False, "message": "User not found"}), 404
+
+        # Delete image file
+        image_path = user.get("image_path")
+        if image_path and os.path.exists(image_path):
+            os.remove(image_path)
+
+        # Delete from database
+        users_col.delete_one({"_id": user_id})
+
+        # Delete attendance records (optional)
+        # attendance_col.delete_many({"userId": user_id})
+
+        # Reload faces
+        face_service.load_known_faces()
+
+        return jsonify({
+            "success": True,
+            "message": f"User {user_id} deleted successfully"
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
 
 # ===============================
 # Run
 # ===============================
 if __name__ == "__main__":
-    print("🚀 Starting Face Attendance Flask API with MongoDB ...")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    print("=" * 60)
+    print("🚀 Starting Face Attendance Flask API")
+    print("=" * 60)
+    print(f"📊 Model: {FACE_MODEL}")
+    print(f"🔍 Detector: {DETECTOR_BACKEND}")
+    print(f"🔒 Liveness: {'ENABLED' if LIVENESS_REQUIRED else 'DISABLED'}")
+    print(f"📁 Image Folder: {IMAGE_FOLDER}")
+    print(f"🗄️  Database: {DB_NAME}")
+    print("=" * 60 + "\n")
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)

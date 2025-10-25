@@ -1,0 +1,158 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+venv39/
+env/
+ENV/
+.venv
+virtualenv/
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Git
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Documentation
+*.md
+README.md
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+docs/
+documentation/
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+*.log
+*.log.*
+test/
+tests/
+spec/
+*_test.py
+*_spec.py
+
+# CI/CD
+.travis.yml
+.gitlab-ci.yml
+.circleci/
+azure-pipelines.yml
+Jenkinsfile
+
+# Data files (uncomment if you don't want to include)
+# Attendancedir/
+# *.csv
+# *.db
+# *.sqlite
+# backup/
+
+# Environment variables (IMPORTANT - keep secrets out!)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+*.secret
+
+# Render specific
+render.yaml
+.render.yaml
+
+# Docker
+Dockerfile.dev
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.cache
+.cache/
+tmp/
+temp/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Node modules (if using any JS tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# pytype
+.pytype/
+
+# Cython
+cython_debug/

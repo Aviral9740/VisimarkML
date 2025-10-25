@@ -1,37 +1,42 @@
-# Use a lightweight base image with Python 3.9
 FROM python:3.9-slim
 
-# Prevent Python from writing .pyc files and buffering stdout/stderr
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-
-# Set work directory
+# Set working directory
 WORKDIR /app
 
-# Install system dependencies for dlib and OpenCV
+# Install minimal system dependencies for OpenCV and image processing
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    g++ \
-    libboost-all-dev \
-    libopenblas-dev \
-    liblapack-dev \
-    libx11-dev \
-    libgtk2.0-dev \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libglib2.0-0 \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
-# Install Python dependencies
-RUN pip install --upgrade pip
+# Copy and install Python dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire project
+# Copy application code
 COPY . .
 
-# Expose the port (Render uses dynamic PORT, so we'll bind to 0.0.0.0)
+# Create directory for face images
+RUN mkdir -p Attendancedir
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PORT=5000
+ENV TF_CPP_MIN_LOG_LEVEL=2
+
+# Expose port
 EXPOSE 5000
 
-# Run the Flask app with Gunicorn
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:${PORT}"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health').read()"
+
+# Run with gunicorn
+CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 2 --threads 2 --worker-class gthread app:app
