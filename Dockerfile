@@ -1,14 +1,7 @@
-# ===========================================================
-# Face Attendance Flask API - DeepFace + TensorFlow + MongoDB
-# Python 3.9 (Bookworm) base image for maximum compatibility
-# ===========================================================
-
 FROM python:3.9-bookworm
 
-# Set working directory
 WORKDIR /app
 
-# Install required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -24,37 +17,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip
 
-# Copy dependency list
 COPY requirements.txt .
 
-# Install dependencies from requirements
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ✅ FIX: Install TensorFlow 2.13 (last stable version with built-in Keras)
 RUN pip install --no-cache-dir tensorflow==2.13.1 keras==2.13.1 h5py==3.10.0
 
-# Optional: Preload DeepFace model for faster container startup
-# RUN python -c "from deepface import DeepFace; DeepFace.build_model('Facenet512')"
-
-# Copy the rest of your application code
 COPY . .
 
-# Create directory for storing face images
 RUN mkdir -p Attendancedir
 
-# Environment variables - REMOVED hardcoded PORT
 ENV PYTHONUNBUFFERED=1 \
     TF_CPP_MIN_LOG_LEVEL=2
 
-# Expose port (Render uses 10000 by default)
 EXPOSE 10000
 
-# Health check - Updated to use $PORT variable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
   CMD curl -f http://localhost:${PORT:-10000}/api/health || exit 1
 
-# ✅ Run app using Gunicorn - PORT comes from environment
 CMD gunicorn app:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --threads 2 --worker-class gthread --preload

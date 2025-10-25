@@ -1,7 +1,3 @@
-# ===============================
-# app.py — Face Attendance API (MongoDB + DeepFace - NO DLIB!)
-# ===============================
-
 import os
 import base64
 import io
@@ -17,9 +13,6 @@ from PIL import Image
 from deepface import DeepFace
 from pymongo import MongoClient
 
-# ===============================
-# Configuration
-# ===============================
 MONGO_URI = "mongodb+srv://nikhilguptasgrr542006_db_user:%40Nik542006@cluster0.qfjep9c.mongodb.net/Sample_db?retryWrites=true&w=majority&appName=Cluster0"
 DB_NAME = "attendance_system"
 
@@ -28,22 +21,13 @@ os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
 LIVENESS_REQUIRED = True
 MIN_CONFIDENCE = 0.6
-TOLERANCE = 0.4  # Distance threshold for DeepFace (lower = stricter)
+TOLERANCE = 0.4
 
-# DeepFace model selection
-# Options: VGG-Face, Facenet, Facenet512, OpenFace, DeepFace, DeepID, ArcFace, Dlib
-# Recommendation: Facenet512 (best balance of speed and accuracy)
+
 FACE_MODEL = "Facenet512"
 
-# Detector backend for face detection
-# Options: opencv, ssd, dlib, mtcnn, retinaface
-# Recommendation: opencv (fastest) or retinaface (most accurate)
+
 DETECTOR_BACKEND = "opencv"
-
-
-# ===============================
-# Utility Functions
-# ===============================
 
 def decode_base64_image_to_bgr(data_uri: str):
     """Decode Base64 image (from React) into OpenCV BGR image."""
@@ -69,31 +53,21 @@ def cosine_distance(embedding1, embedding2):
     embedding1 = np.array(embedding1)
     embedding2 = np.array(embedding2)
 
-    # Normalize
     embedding1 = embedding1 / (np.linalg.norm(embedding1) + 1e-6)
     embedding2 = embedding2 / (np.linalg.norm(embedding2) + 1e-6)
 
-    # Cosine similarity
     similarity = np.dot(embedding1, embedding2)
 
-    # Convert to distance (0 = identical, 2 = opposite)
     distance = 1 - similarity
 
     return distance
 
 
-# ===============================
-# MongoDB Setup
-# ===============================
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client[DB_NAME]
 users_col = db["users"]
 attendance_col = db["attendance"]
 
-
-# ===============================
-# Liveness Detection
-# ===============================
 class LivenessDetector:
     def __init__(self):
         self.texture_threshold = 0.15
@@ -183,9 +157,7 @@ class LivenessDetector:
             return False, {"error": str(e)}
 
 
-# ===============================
-# Face Service (DeepFace - Encodings + Verification)
-# ===============================
+
 class FaceService:
     def __init__(self, liveness):
         self.liveness = liveness
@@ -235,7 +207,6 @@ class FaceService:
         results = []
 
         try:
-            # Detect faces and get embeddings from frame
             embedding_objs = DeepFace.represent(
                 img_path=bgr_frame,
                 model_name=FACE_MODEL,
@@ -250,14 +221,12 @@ class FaceService:
                 frame_embedding = obj["embedding"]
                 facial_area = obj["facial_area"]
 
-                # Extract face coordinates
                 x = facial_area["x"]
                 y = facial_area["y"]
                 w = facial_area["w"]
                 h = facial_area["h"]
                 x1, y1, x2, y2 = x, y, x + w, y + h
 
-                # Liveness check
                 if LIVENESS_REQUIRED:
                     live, checks = self.liveness.is_live(bgr_frame, (x1, y1, x2, y2))
                     if not live:
@@ -268,12 +237,10 @@ class FaceService:
                         })
                         continue
 
-                # Check if we have registered users
                 if not self.known_embeddings:
                     results.append({"matched": False, "reason": "no_users"})
                     continue
 
-                # Compare with all registered faces
                 best_match_idx = -1
                 best_distance = float('inf')
 
@@ -284,7 +251,6 @@ class FaceService:
                         best_distance = distance
                         best_match_idx = idx
 
-                # Check if match is good enough
                 if best_match_idx >= 0 and best_distance < TOLERANCE:
                     confidence = float(1.0 - best_distance)
                     name = self.known_names[best_match_idx]
@@ -314,20 +280,12 @@ class FaceService:
 
         return results
 
-
-# ===============================
-# Flask App
-# ===============================
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 liveness = LivenessDetector()
 face_service = FaceService(liveness)
 
-
-# ===============================
-# Routes
-# ===============================
 
 @app.route("/api/register", methods=["POST"])
 def register_user():
@@ -338,22 +296,20 @@ def register_user():
         username = data["username"]
         image_b64 = data["image"]
 
-        # Save image
         image_path = filename_for(user_id, username)
         bgr = decode_base64_image_to_bgr(image_b64)
         cv2.imwrite(image_path, bgr)
 
-        # Verify face can be detected and encoded
         try:
             embedding_objs = DeepFace.represent(
                 img_path=image_path,
                 model_name=FACE_MODEL,
                 detector_backend=DETECTOR_BACKEND,
-                enforce_detection=True  # Ensure face is detected
+                enforce_detection=True
             )
 
             if not embedding_objs:
-                os.remove(image_path)  # Clean up
+                os.remove(image_path)
                 return jsonify({
                     "success": False,
                     "message": "No face detected in image"
@@ -361,13 +317,12 @@ def register_user():
 
         except Exception as e:
             if os.path.exists(image_path):
-                os.remove(image_path)  # Clean up
+                os.remove(image_path)
             return jsonify({
                 "success": False,
                 "message": f"Face detection failed: {str(e)}"
             }), 400
 
-        # Save to MongoDB
         users_col.update_one(
             {"_id": user_id},
             {"$set": {
@@ -378,7 +333,6 @@ def register_user():
             upsert=True
         )
 
-        # Reload face database
         count = face_service.load_known_faces()
 
         return jsonify({
@@ -399,7 +353,6 @@ def verify_attendance():
         image_b64 = data["image"]
         frame = decode_base64_image_to_bgr(image_b64)
 
-        # Verify faces in frame
         results = face_service.verify(frame)
 
         any_match = False
@@ -410,12 +363,10 @@ def verify_attendance():
                 uname = r["username"]
                 conf = r["confidence"]
 
-                # Check if already marked today
                 date_str = datetime.now().strftime("%Y-%m-%d")
                 existing = attendance_col.find_one({"userId": uid, "date": date_str})
 
                 if not existing:
-                    # Mark attendance
                     attendance_col.insert_one({
                         "userId": uid,
                         "username": uname,
@@ -468,7 +419,6 @@ def get_users():
     try:
         users = list(users_col.find({}, {"_id": 1, "username": 1, "registeredAt": 1}))
 
-        # Convert ObjectId to string for JSON serialization
         for user in users:
             user["userId"] = str(user.pop("_id"))
 

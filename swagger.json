@@ -1,0 +1,268 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Face Attendance Recognition API",
+    "description": "RESTful API for face-based attendance marking using DeepFace, Flask, and MongoDB.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "VisiMark ML Backend",
+      "url": "https://visimarkml-3.onrender.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://visimarkml-3.onrender.com",
+      "description": "Render Production Server"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Returns system health, model details, and basic statistics.",
+        "responses": {
+          "200": {
+            "description": "Health check successful",
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true,
+                  "model": "Facenet512",
+                  "detector": "opencv",
+                  "liveness_enabled": true,
+                  "stats": {
+                    "Total Users": 5,
+                    "Total Attendance Records": 37,
+                    "Today Present": 2,
+                    "Loaded Faces": 5
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/register": {
+      "post": {
+        "summary": "Register New User",
+        "description": "Registers a new user with a face image and stores embedding in MongoDB.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_id": { "type": "string", "example": "101" },
+                  "username": { "type": "string", "example": "John Doe" },
+                  "image": {
+                    "type": "string",
+                    "example": "data:image/jpeg;base64,/9j/4AAQSk..."
+                  }
+                },
+                "required": ["user_id", "username", "image"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "User registered successfully",
+                  "faces_loaded": 6
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or undetectable face image"
+          }
+        }
+      }
+    },
+
+    "/api/verify": {
+      "post": {
+        "summary": "Verify Face and Mark Attendance",
+        "description": "Verifies a user's face and marks attendance if recognized.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "example": "data:image/jpeg;base64,/9j/4AAQSk..."
+                  }
+                },
+                "required": ["image"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Face verification result",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "recognized": [
+                    {
+                      "matched": true,
+                      "userId": "101",
+                      "username": "John Doe",
+                      "confidence": 0.93,
+                      "attendance_marked": true,
+                      "message": "Attendance marked successfully"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/attendance/history": {
+      "get": {
+        "summary": "Get Attendance History",
+        "description": "Fetches attendance records, filtered by user or date if provided.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "schema": { "type": "string" },
+            "description": "User ID to filter records"
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "schema": { "type": "string", "example": "2025-10-25" },
+            "description": "Date in YYYY-MM-DD format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attendance history retrieved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "count": 3,
+                  "records": [
+                    {
+                      "userId": "101",
+                      "username": "John Doe",
+                      "date": "2025-10-25",
+                      "time": "09:31:12",
+                      "confidence": 0.91
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/users": {
+      "get": {
+        "summary": "Get Registered Users",
+        "description": "Returns a list of all registered users with their registration timestamps.",
+        "responses": {
+          "200": {
+            "description": "User list retrieved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "count": 2,
+                  "users": [
+                    {
+                      "userId": "101",
+                      "username": "John Doe",
+                      "registeredAt": "2025-10-20T09:32:01Z"
+                    },
+                    {
+                      "userId": "102",
+                      "username": "Alice Smith",
+                      "registeredAt": "2025-10-22T15:10:18Z"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/reload_faces": {
+      "post": {
+        "summary": "Reload Face Embeddings",
+        "description": "Recomputes all face embeddings from stored images and reloads them into memory.",
+        "responses": {
+          "200": {
+            "description": "Reload successful",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Faces reloaded successfully",
+                  "count": 6
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/delete_user/{user_id}": {
+      "delete": {
+        "summary": "Delete User",
+        "description": "Deletes a user and their associated data (including stored image).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "User ID of the person to delete"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "User 101 deleted successfully"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {},
+    "securitySchemes": {}
+  }
+}
