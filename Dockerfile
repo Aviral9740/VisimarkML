@@ -34,7 +34,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ✅ Explicitly install TensorFlow + Keras (ensures DeepFace works)
-RUN pip install --no-cache-dir tensorflow==2.15.0 keras==2.15.0 h5py==3.10.0
+RUN pip install --no-cache-dir tensorflow==2.15.0 h5py==3.10.0
 
 # Optional: Preload DeepFace model for faster container startup
 # RUN python -c "from deepface import DeepFace; DeepFace.build_model('Facenet512')"
