@@ -29,18 +29,40 @@ FACE_MODEL = "Facenet512"
 
 DETECTOR_BACKEND = "opencv"
 
-def decode_base64_image_to_bgr(data_uri: str):
-    """Decode Base64 image (from React) into OpenCV BGR image."""
-    if ',' in data_uri:
-        data = data_uri.split(',')[1]
-    else:
-        data = data_uri
-    img_bytes = base64.b64decode(data)
-    pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    np_img = np.array(pil_img)
-    bgr_img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
-    return bgr_img
+def decode_base64_image_to_bgr(data_uri):
+    """Decode image input (base64 string, bytes, or buffer object) into OpenCV BGR image."""
+    try:
+        # 🧠 Case 1: If input is already bytes (binary)
+        if isinstance(data_uri, (bytes, bytearray)):
+            img_bytes = data_uri
 
+        # 🧠 Case 2: If input is a Node Buffer object like {"type": "Buffer", "data": [...]}
+        elif isinstance(data_uri, dict) and "data" in data_uri:
+            img_bytes = bytes(data_uri["data"])
+
+        # 🧠 Case 3: If it's a Base64 string with or without header
+        elif isinstance(data_uri, str):
+            # Remove data URI header if present
+            if ',' in data_uri:
+                data = data_uri.split(',')[1]
+            else:
+                data = data_uri
+            img_bytes = base64.b64decode(data)
+
+        else:
+            raise ValueError("Unsupported image format received")
+
+        # Convert to PIL image
+        pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+        # Convert to NumPy (RGB → BGR for OpenCV)
+        np_img = np.array(pil_img)
+        bgr_img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
+
+        return bgr_img
+
+    except Exception as e:
+        raise ValueError(f"Invalid or unsupported image input: {e}")
 
 def filename_for(user_id, username):
     """Generate a safe filename for storing user images."""
