@@ -29,6 +29,7 @@ FACE_MODEL = "Facenet512"
 
 DETECTOR_BACKEND = "opencv"
 
+
 def decode_base64_image_to_bgr(data_uri):
     """Decode image input (base64 string, bytes, or buffer object) into OpenCV BGR image."""
     try:
@@ -47,6 +48,17 @@ def decode_base64_image_to_bgr(data_uri):
                 data = data_uri.split(',')[1]
             else:
                 data = data_uri
+
+            # 🔧 FIX: Clean the base64 string
+            # Remove any whitespace, newlines, or invalid characters
+            data = data.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+
+            # 🔧 FIX: Add padding if needed
+            # Base64 strings must be a multiple of 4 characters
+            missing_padding = len(data) % 4
+            if missing_padding:
+                data += '=' * (4 - missing_padding)
+
             img_bytes = base64.b64decode(data)
 
         else:
@@ -63,7 +75,6 @@ def decode_base64_image_to_bgr(data_uri):
 
     except Exception as e:
         raise ValueError(f"Invalid or unsupported image input: {e}")
-
 def filename_for(user_id, username):
     """Generate a safe filename for storing user images."""
     filename = f"{str(user_id).strip()}_{str(username).strip()}.jpg"
