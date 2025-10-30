@@ -1,4 +1,6 @@
 import os
+
+os.environ['TF_USE_LEGACY_KERAS'] = '1'
 import base64
 import io
 from datetime import datetime
@@ -23,38 +25,40 @@ LIVENESS_REQUIRED = True
 MIN_CONFIDENCE = 0.6
 TOLERANCE = 0.4
 
-
 FACE_MODEL = "Facenet512"
-
-
 DETECTOR_BACKEND = "opencv"
 
 
-def decode_base64_image_to_bgr(data_uri):
-    """Decode image input (base64 string, bytes, or buffer object) into OpenCV BGR image."""
+def decode_image_to_bgr(image_input):
+    """
+    Decode image from various input formats into OpenCV BGR image.
+    Supports: base64 string, bytes, buffer object, or file upload object.
+    """
     try:
-        # 🧠 Case 1: If input is already bytes (binary)
-        if isinstance(data_uri, (bytes, bytearray)):
-            img_bytes = data_uri
+        # 🧠 Case 1: If input is a Flask FileStorage object (direct file upload)
+        if hasattr(image_input, 'read'):
+            img_bytes = image_input.read()
 
-        # 🧠 Case 2: If input is a Node Buffer object like {"type": "Buffer", "data": [...]}
-        elif isinstance(data_uri, dict) and "data" in data_uri:
-            img_bytes = bytes(data_uri["data"])
+        # 🧠 Case 2: If input is already bytes (binary)
+        elif isinstance(image_input, (bytes, bytearray)):
+            img_bytes = image_input
 
-        # 🧠 Case 3: If it's a Base64 string with or without header
-        elif isinstance(data_uri, str):
+        # 🧠 Case 3: If input is a Node Buffer object like {"type": "Buffer", "data": [...]}
+        elif isinstance(image_input, dict) and "data" in image_input:
+            img_bytes = bytes(image_input["data"])
+
+        # 🧠 Case 4: If it's a Base64 string with or without header
+        elif isinstance(image_input, str):
             # Remove data URI header if present
-            if ',' in data_uri:
-                data = data_uri.split(',')[1]
+            if ',' in image_input:
+                data = image_input.split(',')[1]
             else:
-                data = data_uri
+                data = image_input
 
-            # 🔧 FIX: Clean the base64 string
-            # Remove any whitespace, newlines, or invalid characters
+            # 🔧 Clean the base64 string
             data = data.strip().replace('\n', '').replace('\r', '').replace(' ', '')
 
-            # 🔧 FIX: Add padding if needed
-            # Base64 strings must be a multiple of 4 characters
+            # 🔧 Add padding if needed
             missing_padding = len(data) % 4
             if missing_padding:
                 data += '=' * (4 - missing_padding)
@@ -75,6 +79,8 @@ def decode_base64_image_to_bgr(data_uri):
 
     except Exception as e:
         raise ValueError(f"Invalid or unsupported image input: {e}")
+
+
 def filename_for(user_id, username):
     """Generate a safe filename for storing user images."""
     filename = f"{str(user_id).strip()}_{str(username).strip()}.jpg"
@@ -90,7 +96,6 @@ def cosine_distance(embedding1, embedding2):
     embedding2 = embedding2 / (np.linalg.norm(embedding2) + 1e-6)
 
     similarity = np.dot(embedding1, embedding2)
-
     distance = 1 - similarity
 
     return distance
@@ -100,6 +105,7 @@ mongo_client = MongoClient(MONGO_URI)
 db = mongo_client[DB_NAME]
 users_col = db["users"]
 attendance_col = db["attendance"]
+
 
 class LivenessDetector:
     def __init__(self):
@@ -190,7 +196,6 @@ class LivenessDetector:
             return False, {"error": str(e)}
 
 
-
 class FaceService:
     def __init__(self, liveness):
         self.liveness = liveness
@@ -213,12 +218,11 @@ class FaceService:
                 continue
 
             try:
-                # Generate embedding using DeepFace
                 embedding_objs = DeepFace.represent(
                     img_path=image_path,
                     model_name=FACE_MODEL,
                     detector_backend=DETECTOR_BACKEND,
-                    enforce_detection=False  # Don't fail if face not detected
+                    enforce_detection=False
                 )
 
                 if embedding_objs and len(embedding_objs) > 0:
@@ -313,6 +317,7 @@ class FaceService:
 
         return results
 
+
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
@@ -322,15 +327,44 @@ face_service = FaceService(liveness)
 
 @app.route("/api/register", methods=["POST"])
 def register_user():
-    """Register a new user with face image."""
+    """
+    Register a new user with face image.
+
+    Accepts two formats:
+    1. JSON with base64 image: {"user_id": "123", "username": "John", "image": "base64..."}
+    2. Multipart form-data: user_id, username, image (file)
+    """
     try:
-        data = request.get_json(force=True)
-        user_id = str(data["user_id"])
-        username = data["username"]
-        image_b64 = data["image"]
+        # Check if it's multipart/form-data (direct file upload)
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            user_id = str(request.form.get("user_id"))
+            username = request.form.get("username")
+
+            if 'image' not in request.files:
+                return jsonify({
+                    "success": False,
+                    "message": "No image file provided"
+                }), 400
+
+            image_file = request.files['image']
+
+            if image_file.filename == '':
+                return jsonify({
+                    "success": False,
+                    "message": "No image file selected"
+                }), 400
+
+            image_input = image_file
+
+        # Otherwise, assume JSON with base64 image
+        else:
+            data = request.get_json(force=True)
+            user_id = str(data["user_id"])
+            username = data["username"]
+            image_input = data["image"]
 
         image_path = filename_for(user_id, username)
-        bgr = decode_base64_image_to_bgr(image_b64)
+        bgr = decode_image_to_bgr(image_input)
         cv2.imwrite(image_path, bgr)
 
         try:
@@ -380,12 +414,38 @@ def register_user():
 
 @app.route("/api/verify", methods=["POST"])
 def verify_attendance():
-    """Verify face and mark attendance."""
-    try:
-        data = request.get_json(force=True)
-        image_b64 = data["image"]
-        frame = decode_base64_image_to_bgr(image_b64)
+    """
+    Verify face and mark attendance.
 
+    Accepts two formats:
+    1. JSON with base64 image: {"image": "base64..."}
+    2. Multipart form-data: image (file)
+    """
+    try:
+        # Check if it's multipart/form-data (direct file upload)
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            if 'image' not in request.files:
+                return jsonify({
+                    "success": False,
+                    "message": "No image file provided"
+                }), 400
+
+            image_file = request.files['image']
+
+            if image_file.filename == '':
+                return jsonify({
+                    "success": False,
+                    "message": "No image file selected"
+                }), 400
+
+            image_input = image_file
+
+        # Otherwise, assume JSON with base64 image
+        else:
+            data = request.get_json(force=True)
+            image_input = data["image"]
+
+        frame = decode_image_to_bgr(image_input)
         results = face_service.verify(frame)
 
         any_match = False
@@ -513,24 +573,17 @@ def reload_faces():
 def delete_user(user_id):
     """Delete a user and their data."""
     try:
-        # Get user to find image path
         user = users_col.find_one({"_id": user_id})
 
         if not user:
             return jsonify({"success": False, "message": "User not found"}), 404
 
-        # Delete image file
         image_path = user.get("image_path")
         if image_path and os.path.exists(image_path):
             os.remove(image_path)
 
-        # Delete from database
         users_col.delete_one({"_id": user_id})
 
-        # Delete attendance records (optional)
-        # attendance_col.delete_many({"userId": user_id})
-
-        # Reload faces
         face_service.load_known_faces()
 
         return jsonify({
@@ -542,9 +595,6 @@ def delete_user(user_id):
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-# ===============================
-# Run
-# ===============================
 if __name__ == "__main__":
     print("=" * 60)
     print("🚀 Starting Face Attendance Flask API")
