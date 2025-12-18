@@ -1,55 +1,44 @@
-# Plagiarism Detection Web App
+# Visimark — Face Recognition Based Attendance System (ML & Backend)
 
-This repository hosts a **plagiarism detection web application** built using **Streamlit**.  
-The app compares input text against both **local data** and **live web content** to identify potential plagiarism.
+Visimark is an **attendance marking system powered by facial recognition and liveness detection**.  
+This repository contains the **machine learning and backend logic** responsible for face registration, verification, liveness checks, and attendance tracking.
 
----
-
-## 🚀 Live Demo
-
-🔗 **Demo URL:** [Demo](https://plagiarism-detector-app.streamlit.app/)
-
-> Replace the above placeholder with your deployed Streamlit app link.
+The system prevents spoofing attacks (photos/videos) and ensures **secure, real-time attendance marking**.
 
 ---
 
-## ✨ Features
+## 🚀 Key Features
 
-- **Real-Time Plagiarism Detection**: Compares user-provided text against local documents and performs live web searches.
-- **Multiple Similarity Techniques**:
-  - N-gram similarity  
-  - TF-IDF based cosine similarity  
-  - Longest Common Subsequence (LCS)
-- **Live Web Integration**: Checks plagiarism against real-time web sources in addition to local data.
-- **Streamlit Interface**: Clean and interactive UI for easy usage by non-technical users.
+- **Face Recognition Attendance**
+  - Identifies registered users using facial embeddings
+  - Matches faces using cosine similarity
 
----
+- **Liveness Detection (Anti-Spoofing)**
+  - Texture analysis (blur & sharpness checks)
+  - Motion detection across frames
+  - Skin color consistency checks
+  - Eye blink detection
+  - Attendance marked only if liveness checks pass
 
-## ⚙️ How It Works
+- **Real-Time Verification API**
+  - REST APIs for face registration and attendance verification
+  - Supports both **base64 images** and **multipart file uploads**
 
-1. **Input Text**: User enters or uploads the text to be checked.
-2. **Preprocessing**: Text is cleaned and tokenized.
-3. **Similarity Analysis**:  
-   - N-grams for pattern overlap  
-   - TF-IDF + cosine similarity for semantic similarity  
-   - LCS for sequence-level similarity
-4. **Web & Local Comparison**: Input text is compared against both local data and live web results.
-5. **Results**: Similarity scores and potential plagiarism indicators are displayed on the UI.
+- **Scalable Face Database**
+  - Stores facial embeddings using MongoDB
+  - Reloadable face embeddings without server restart
 
 ---
 
-## 🛠️ Getting Started
+## 🧠 ML & Computer Vision Stack
 
-### Prerequisites
+- **Face Recognition Model**: FaceNet512 (DeepFace)
+- **Similarity Metric**: Cosine Distance
+- **Face Detection Backend**: OpenCV
+- **Liveness Detection Techniques**:
+  - Laplacian-based texture analysis
+  - Frame-difference motion detection
+  - HSV-based skin color detection
+  - Haar Cascade eye-blink detection
 
-- Python 3.9
-- Streamlit
-- Required Python packages (listed in `requirements.txt`)
-
-### Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/Aviral9740/Plagiarism-Detection-Streamlit.git
-cd Plagiarism-Detection-Streamlit
+---
