@@ -1,6 +1,4 @@
 import os
-
-os.environ['TF_USE_LEGACY_KERAS'] = '1'
 import base64
 import io
 from datetime import datetime
@@ -607,4 +605,4 @@ if __name__ == "__main__":
     print("=" * 60 + "\n")
 
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
